@@ -9,3 +9,4 @@ if (!tgHash || !tgId) throw new Error("Задайте базовый env");
 const telegramService = new TelegramService(tgId, tgHash);
 
 await telegramService.start();
+await telegramService.sendMessage("@Zenderio", "ответ на сообщение", 141270);

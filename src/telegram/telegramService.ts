@@ -10,7 +10,13 @@ interface DialogType {
   unreadCount: number;
 }
 
-interface MessageType {}
+interface MessageType {
+  id: number;
+  date: number;
+  replyTo: number | null;
+  text: string;
+  author: "me" | "other";
+}
 
 export class TelegramService {
   private readonly client: TelegramClient;
@@ -42,9 +48,9 @@ export class TelegramService {
     }
   }
 
-  async getDialogs() {
+  async getDialogs(): Promise<DialogType[]> {
     const dialogs = await this.client.getDialogs();
-    const dialogsResult = [];
+    const dialogsResult: DialogType[] = [];
     for (const dialog of dialogs) {
       if (!dialog.id || !dialog.name) continue;
       const entity = dialog.entity;
@@ -52,22 +58,57 @@ export class TelegramService {
       const username =
         entity && "username" in entity ? (entity.username ?? null) : null;
 
-      const data: DialogType = {
+      dialogsResult.push({
         id: dialog.id?.toString(),
         name: dialog.name,
         username: username,
         type: dialog.isUser ? "user" : dialog.isChannel ? "channel" : "group",
         unreadCount: dialog.unreadCount,
-      };
-
-      dialogsResult.push(data);
+      });
     }
     return dialogsResult;
   }
 
-  async getMessages(findItem: string, limit: number = 100) {
-    const target = await this.client.getInputEntity(findItem);
+  async getMessages(
+    username: string,
+    limit: number = 100,
+  ): Promise<MessageType[]> {
+    const target = await this.client.getInputEntity(username);
+    const messages = await this.client.getMessages(target, { limit });
+    const messagesResult: MessageType[] = [];
+    for (const message of messages) {
+      messagesResult.push({
+        id: message.id,
+        date: message.date,
+        replyTo: message.replyToMsgId ?? null,
+        text: message.message,
+        author: message.out ? "me" : "other",
+      });
+    }
+    return messagesResult;
+  }
+  async sendMessage(
+    username: string,
+    message: string,
+    replyTo?: number,
+  ): Promise<void> {
+    const target = await this.client.getInputEntity(username);
+    this.client.sendMessage(target, {
+      message,
+      ...(replyTo !== undefined ? { replyTo } : {}),
+    });
+  }
+  async setTyping(username: string) {
+    const target = await this.client.getInputEntity(username);
 
-    return this.client.getMessages(target, { limit });
+    const interval = setInterval(() => {
+      void this.client.setTyping(target, "typing");
+    }, 4000);
+
+    const closeTyping = async () => {
+      clearInterval(interval);
+      await this.client.setTyping(target, "cancel");
+    };
+    return closeTyping;
   }
 }
