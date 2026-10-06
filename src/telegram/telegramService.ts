@@ -1,22 +1,8 @@
 import { TelegramClient } from "teleproto";
 import { StoreSession } from "teleproto/sessions/StoreSession.js";
 import { createInterface } from "node:readline/promises";
-
-interface DialogType {
-  id: string;
-  name: string;
-  type: "user" | "group" | "channel";
-  username: string | null;
-  unreadCount: number;
-}
-
-interface MessageType {
-  id: number;
-  date: number;
-  replyTo: number | null;
-  text: string;
-  author: "me" | "other";
-}
+import type { DialogType, MessageType } from "../types/telegram.types.js";
+import { Api } from "teleproto";
 
 export class TelegramService {
   private readonly client: TelegramClient;
@@ -68,7 +54,15 @@ export class TelegramService {
     }
     return dialogsResult;
   }
-
+  private adaptMessageData(message: Api.Message): MessageType {
+    return {
+      id: message.id,
+      date: message.date,
+      replyTo: message.replyToMsgId ?? null,
+      text: message.message,
+      author: message.out ? "me" : "other",
+    };
+  }
   async getMessages(
     username: string,
     limit: number = 100,
@@ -77,15 +71,16 @@ export class TelegramService {
     const messages = await this.client.getMessages(target, { limit });
     const messagesResult: MessageType[] = [];
     for (const message of messages) {
-      messagesResult.push({
-        id: message.id,
-        date: message.date,
-        replyTo: message.replyToMsgId ?? null,
-        text: message.message,
-        author: message.out ? "me" : "other",
-      });
+      messagesResult.push(this.adaptMessageData(message));
     }
     return messagesResult;
+  }
+  async getMessageById(username: string, id: number): Promise<MessageType> {
+    const target = await this.client.getInputEntity(username);
+    const messages = await this.client.getMessages(target, { ids: [id] });
+    const message = messages[0];
+    if (!message) throw new Error(`Message with id ${id} not found`);
+    return this.adaptMessageData(message);
   }
   async sendMessage(
     username: string,
@@ -93,13 +88,15 @@ export class TelegramService {
     replyTo?: number,
   ): Promise<void> {
     const target = await this.client.getInputEntity(username);
-    this.client.sendMessage(target, {
+    await this.client.sendMessage(target, {
       message,
       ...(replyTo !== undefined ? { replyTo } : {}),
     });
   }
-  async setTyping(username: string) {
+  async setTyping(username: string): Promise<() => Promise<void>> {
     const target = await this.client.getInputEntity(username);
+
+    await this.client.setTyping(target, "typing");
 
     const interval = setInterval(() => {
       void this.client.setTyping(target, "typing");
@@ -110,5 +107,16 @@ export class TelegramService {
       await this.client.setTyping(target, "cancel");
     };
     return closeTyping;
+  }
+  async updateStatus(status: "online" | "offline"): Promise<void> {
+    await this.client.updateStatus(status === "online");
+  }
+  async messageListener(
+    allowedChats: string[],
+    callback: () => void,
+  ): Promise<void> {
+    this.client.updates.on("newMessage", callback, {
+      chats: allowedChats,
+    });
   }
 }
