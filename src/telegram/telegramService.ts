@@ -75,6 +75,10 @@ export class TelegramService {
     }
     return messagesResult;
   }
+  async isAuthorized(): Promise<boolean> {
+    await this.client.connect();
+    return this.client.checkAuthorization();
+  }
   async getMessageById(username: string, id: number): Promise<MessageType> {
     const target = await this.client.getInputEntity(username);
     const messages = await this.client.getMessages(target, { ids: [id] });
@@ -113,7 +117,7 @@ export class TelegramService {
   }
   async messageListener(
     allowedChats: string[],
-    callback: () => void,
+    callback: (update: any) => void,
   ): Promise<void> {
     this.client.updates.on("newMessage", callback, {
       chats: allowedChats,
